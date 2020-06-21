@@ -5,7 +5,7 @@
 		_GrassHeight("Grass height", float) = 0
         _GrassOffset("Grass Blades Offset", Range(0, 0.1)) = 0.05
 
-		_ShakeStrength("Shake Strength", Range(0, 0.1)) = 0.01
+		_ShakeStrength("Shake Strength", Range(0, 0.05)) = 0.01
         _ShakeFrequency("Shake Frequency", Range(0, 100)) = 10
 
 		_GrassBlades("Grass blades per triangle", Range(0, 15)) = 1
@@ -17,6 +17,8 @@
 		CGINCLUDE
 
 			#include "UnityCG.cginc"
+
+            sampler2D _GrassColorTex;
 
 			float _GrassHeight;
             float _GrassOffset;
@@ -116,7 +118,7 @@
 			
 					float4 newVertexPoint = midpoint + float4(normal, 0.0) * heightFactor;
                     newVertexPoint += + float4(r1, 0, r2, 0) * _GrassOffset;    // offset
-                    newVertexPoint += float4(offset, 0, offset, 0) * _ShakeStrength * heightFactor;
+                    newVertexPoint += float4(offset, 0, offset, 0) * _ShakeStrength;
 
 					triStream.Append(GetVertex(pointA, float2(0, 0), fixed4(0, 0, 0, 1)));
 					triStream.Append(GetVertex(newVertexPoint, float2(0.5, 1), fixed4(1.0, 1.0, 1.0, 1.0)));
@@ -135,9 +137,12 @@
 
 			fixed4 frag(g2f i) : SV_Target
 			{
+                return tex2D(_GrassColorTex, float2(i.uv.y, 0.0));
+                
 				
-				
-				return fixed4(0, i.uv.y, 0, 0);
+                //return lerp(fixed4(0.27, 0.31, 0.35, 1.0), fixed4(0, 1.0, 0.0, 1.0), i.uv.y);
+
+				//return fixed4(0, i.uv.y, 0, 0);
 			}
 
 		ENDCG
