@@ -17,6 +17,7 @@
 		CGINCLUDE
 
 			#include "UnityCG.cginc"
+            #include "Autolight.cginc" 
 
             sampler2D _GrassColorTex;
 
@@ -42,9 +43,12 @@
 
 			struct g2f
 			{
-				float2 uv : TEXCOORD0;
 				float4 vertex : SV_POSITION;
 				float4 col : COLOR;
+                float3 normal : NORMAL;
+                float2 uv : TEXCOORD0;
+                float3 viewDir : TEXCOORD1;
+                unityShadowCoord4 _ShadowCoord : TEXCOORD2;
 			};
 
 			float random2(float2 st)
@@ -75,12 +79,15 @@
 								 dot(random2(rt), fpos - float2(1., 1.)), u.x), u.y);
 			}
 
-			g2f GetVertex(float4 pos, float2 uv, fixed4 col)
+			g2f GetVertex(float4 pos, float2 uv, fixed4 col, float3 normal)
 			{
 				g2f o;
 				o.vertex = UnityObjectToClipPos(pos);
 				o.uv = uv;
 				o.col = col;
+                o.normal = UnityObjectToWorldNormal(normal);
+                o.viewDir = WorldSpaceViewDir(pos);
+                o._ShadowCoord = ComputeScreenPos(o.vertex);
 				return o;
 			}
 
@@ -119,31 +126,24 @@
 					float4 newVertexPoint = midpoint + float4(normal, 0.0) * heightFactor;
                     newVertexPoint += + float4(r1, 0, r2, 0) * _GrassOffset;    // offset
                     newVertexPoint += float4(offset, 0, offset, 0) * _ShakeStrength;
+                    float3 bladeNormal = normalize(cross(pointB.xyz - pointA.xyz, midpoint.xyz - newVertexPoint.xyz));
 
-					triStream.Append(GetVertex(pointA, float2(0, 0), fixed4(0, 0, 0, 1)));
-					triStream.Append(GetVertex(newVertexPoint, float2(0.5, 1), fixed4(1.0, 1.0, 1.0, 1.0)));
-					triStream.Append(GetVertex(pointB, float2(1, 0), fixed4(0, 0, 0, 1)));
+					triStream.Append(GetVertex(pointA, float2(0, 0), fixed4(0, 0, 0, 1), bladeNormal));
+					triStream.Append(GetVertex(newVertexPoint, float2(0.5, 1), fixed4(1.0, 1.0, 1.0, 1.0), bladeNormal));
+					triStream.Append(GetVertex(pointB, float2(1, 0), fixed4(0, 0, 0, 1), bladeNormal));
 
 					triStream.RestartStrip();
 				}
 
 				for (int i = 0; i < 3; i++)
 				{
-					triStream.Append(GetVertex(input[i].vertex, float2(0, 0), fixed4(0, 0, 0, 1)));
+					triStream.Append(GetVertex(input[i].vertex, float2(0, 0), fixed4(0, 0, 0, 1), normal));
 				}
 
 				triStream.RestartStrip();
 			}
 
-			fixed4 frag(g2f i) : SV_Target
-			{
-                return tex2D(_GrassColorTex, float2(i.uv.y, 0.0));
-                
-				
-                //return lerp(fixed4(0.27, 0.31, 0.35, 1.0), fixed4(0, 1.0, 0.0, 1.0), i.uv.y);
-
-				//return fixed4(0, i.uv.y, 0, 0);
-			}
+			
 
 		ENDCG
 
@@ -152,16 +152,65 @@
 
         Pass
         {
+            Tags { "RenderType"="Opaque" "LightMode" = "ForwardBase" }
 			Cull Off
 
             CGPROGRAM
             #pragma vertex vert
 			#pragma geometry geom
             #pragma fragment frag
+            #pragma multi_compile_fwdbase 
 
             #pragma target 4.0
 
+            #include "UnityCG.cginc"
+            #include "Lighting.cginc"
+            #include "AutoLight.cginc"
+            fixed4 frag(g2f i) : SV_Target
+			{
+                float3 normal = normalize(i.normal);
+                float3 lightDir = normalize(_WorldSpaceLightPos0.xyz);
+                float3 viewDir = normalize(i.viewDir);
+                
 
+                float vl = dot(lightDir, viewDir);
+                float nl = abs(dot(normal, lightDir)) * 0.5 + 0.5;
+
+                fixed3 grassColor = tex2D(_GrassColorTex, float2(i.uv.y, 0.0)).rgb;
+
+
+                fixed atten = SHADOW_ATTENUATION(i);
+                fixed3 col;
+
+
+                col = grassColor * (_LightColor0.rgb * nl + UNITY_LIGHTMODEL_AMBIENT.rgb * atten);
+
+              
+                return fixed4(col, 1);
+			}
+            ENDCG
+        }
+
+        Pass
+        {
+            Tags
+            {
+                "LightMode" = "ShadowCaster"
+            }
+            Cull Off
+            CGPROGRAM
+            #pragma vertex vert
+            #pragma geometry geom
+            #pragma fragment fragShadow
+ 
+            #pragma target 4.6
+            #pragma multi_compile_shadowcaster
+ 
+            float4 fragShadow(g2f i) : SV_Target
+            {
+                SHADOW_CASTER_FRAGMENT(i)
+            }            
+             
             ENDCG
         }
     }
